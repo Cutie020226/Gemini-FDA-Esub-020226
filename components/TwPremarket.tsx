@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Settings, FlowerStyle, TwAppData, LogEntry } from '../types';
 import { generateContent } from '../services/geminiService';
-import { Play, ClipboardList, FileText, ChevronDown, ChevronUp } from 'lucide-react';
+import { Play, ClipboardList, FileText, ChevronDown, ChevronUp, Download, FileJson, FileSpreadsheet, FolderOpen } from 'lucide-react';
 
 interface TwPremarketProps {
   settings: Settings;
@@ -75,6 +75,61 @@ const TwPremarket: React.FC<TwPremarketProps> = ({ settings, currentStyle, addLo
   const [generatedMd, setGeneratedMd] = useState('');
   const [showDetails, setShowDetails] = useState(false);
   const [viewMode, setViewMode] = useState<'Form' | 'Draft' | 'AI Report'>('Form');
+  
+  // Case Management
+  const [mockCases, setMockCases] = useState<TwAppData[]>([]);
+  const [selectedCaseIdx, setSelectedCaseIdx] = useState<number>(-1);
+
+  // Load default datasets at start
+  useEffect(() => {
+    fetch('/defaultdataset.json')
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setMockCases(data);
+        }
+      })
+      .catch(err => console.error("Failed to load default mock datasets", err));
+  }, []);
+
+  const handleLoadCase = () => {
+    if (selectedCaseIdx >= 0 && mockCases[selectedCaseIdx]) {
+      setFormData(mockCases[selectedCaseIdx]);
+      alert(`Loaded case: ${mockCases[selectedCaseIdx].nameEn}`);
+    }
+  };
+
+  const handleDownloadJSON = () => {
+    const dataStr = JSON.stringify(formData, null, 2);
+    const blob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `Application_${formData.docNo || "Draft"}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleDownloadCSV = () => {
+    const headers = Object.keys(formData);
+    const values = Object.values(formData).map(v => {
+      // Escape quotes and wrap in quotes
+      const str = String(v).replace(/"/g, '""');
+      return `"${str}"`;
+    });
+    const csvContent = [headers.join(','), values.join(',')].join('\n');
+    
+    // Add BOM for Excel compatibility with UTF-8
+    const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `Application_${formData.docNo || "Draft"}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
@@ -227,23 +282,59 @@ ${formData.clinicalInfo || "（未填）"}
   return (
     <div className="space-y-6 animate-fade-in pb-10">
       <div className={`p-6 rounded-xl shadow-lg border border-white/40 backdrop-blur-md ${currentStyle.card}`}>
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-col md:flex-row items-center justify-between mb-6 gap-4">
           <div className="flex items-center gap-3">
             <div className={`p-2 rounded-lg ${currentStyle.sidebar} ${currentStyle.text}`}>
               <ClipboardList size={24} />
             </div>
             <h2 className={`text-2xl font-bold ${currentStyle.text}`}>Step 1 – 線上申請書草稿</h2>
           </div>
-          <div className="flex bg-white/40 rounded-lg p-1">
-             {['Form', 'Draft', 'AI Report'].map(m => (
-               <button 
-                 key={m}
-                 onClick={() => setViewMode(m as any)}
-                 className={`px-4 py-1 rounded text-xs font-bold transition-all ${viewMode === m ? 'bg-white shadow text-black' : 'text-gray-600 hover:bg-white/20'}`}
-               >
-                 {m}
+          
+          <div className="flex flex-wrap items-center gap-2">
+             {/* Case Management Controls */}
+             <div className="flex items-center gap-2 bg-white/40 p-1.5 rounded-lg">
+                <FolderOpen size={16} className={`opacity-60 ${currentStyle.text}`} />
+                <select 
+                  className="bg-transparent text-xs font-semibold focus:outline-none max-w-[150px]"
+                  onChange={(e) => setSelectedCaseIdx(Number(e.target.value))}
+                  value={selectedCaseIdx}
+                >
+                  <option value={-1}>Select Test Case...</option>
+                  {mockCases.map((c, idx) => (
+                    <option key={idx} value={idx}>{c.nameEn || c.nameZh || `Case ${idx+1}`}</option>
+                  ))}
+                </select>
+                <button 
+                  onClick={handleLoadCase}
+                  disabled={selectedCaseIdx === -1}
+                  className="px-2 py-1 bg-blue-500/20 text-blue-700 text-xs rounded hover:bg-blue-500/30 disabled:opacity-50"
+                >
+                  Load
+                </button>
+             </div>
+
+             <div className="h-6 w-px bg-gray-400/30 mx-1"></div>
+
+             <div className="flex bg-white/40 rounded-lg p-1">
+               {['Form', 'Draft', 'AI Report'].map(m => (
+                 <button 
+                   key={m}
+                   onClick={() => setViewMode(m as any)}
+                   className={`px-4 py-1 rounded text-xs font-bold transition-all ${viewMode === m ? 'bg-white shadow text-black' : 'text-gray-600 hover:bg-white/20'}`}
+                 >
+                   {m}
+                 </button>
+               ))}
+            </div>
+
+            <div className="flex gap-2 ml-2">
+               <button onClick={handleDownloadJSON} title="Export JSON" className="p-2 rounded-lg bg-white/40 hover:bg-white/60 transition-all text-gray-700">
+                  <FileJson size={18} />
                </button>
-             ))}
+               <button onClick={handleDownloadCSV} title="Export CSV" className="p-2 rounded-lg bg-white/40 hover:bg-white/60 transition-all text-gray-700">
+                  <FileSpreadsheet size={18} />
+               </button>
+            </div>
           </div>
         </div>
         
